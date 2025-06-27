@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import mongoosePaginate from "mongoose-paginate-v2";
 
+// Primary collection for current stock state
 const inventoryStockSchema = new mongoose.Schema(
   {
     item: {
@@ -9,30 +10,30 @@ const inventoryStockSchema = new mongoose.Schema(
       required: [true, "Item reference is required"],
       index: true
     },
+    // Total current quantity across all batches
     currentQuantity: {
       type: Number,
       required: [true, "Current quantity is required"],
       default: 0
     },
+    // Latest cost price
+    currentCostPrice: {
+      type: Number,
+      required: [true, "Current cost price is required"]
+    },
+    // Latest sale price
+    currentSalePrice: {
+      type: Number,
+      required: [true, "Current sale price is required"]
+    },
+    // Average cost price across all available batches (weighted average)
+    averageCostPrice: {
+      type: Number,
+      required: [true, "Average cost price is required"]
+    },
     minimumStockLevel: {
       type: Number,
       default: 10
-    },
-    location: {
-      type: String,
-      default: "Main Warehouse",
-      trim: true
-    },
-    costPrice: {
-      type: Number,
-      required: [true, "Cost price is required"]
-    },
-    batchNumber: {
-      type: String,
-      trim: true
-    },
-    expiryDate: {
-      type: Date
     },
     status: {
       type: String,
@@ -42,9 +43,6 @@ const inventoryStockSchema = new mongoose.Schema(
     lastUpdatedBy: {
       type: String,
       default: "admin"
-    },
-    notes: {
-      type: String
     }
   },
   {
@@ -52,15 +50,7 @@ const inventoryStockSchema = new mongoose.Schema(
   }
 );
 
-// Create compound index for faster queries by item and status
-inventoryStockSchema.index({ item: 1, status: 1 });
-
-// Add virtual for stock value calculation
-inventoryStockSchema.virtual('stockValue').get(function() {
-  return this.currentQuantity * this.costPrice;
-});
-
-// Add middleware to update status based on quantity
+// Status update middleware
 inventoryStockSchema.pre('save', function(next) {
   if (this.currentQuantity <= 0) {
     this.status = "out_of_stock";

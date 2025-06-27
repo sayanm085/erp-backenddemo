@@ -1,6 +1,7 @@
 import Item from '../model/Item.model.js'
 import PurchaseOrderByDealer from '../model/PurchaseOrderByDealer.js'
 import InventoryStock from '../model/InventoryStock.js'
+import InventoryBatch from '../model/InventoryBatch.js'
 import {asyncHandler} from '../utils/asyncHandler.js'
 import {ApiResponse} from '../utils/ApiResponse.js'
 
