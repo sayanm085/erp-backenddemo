@@ -5,7 +5,7 @@ import {
   createDealer,
   updateDealer,
   deleteDealer,
-  getSearchSuggestions,
+  get,
 } from "../controllers/dealerController.js";
 
 
@@ -21,8 +21,7 @@ router
   .delete(deleteDealer);
 
 // Export the router
-// Public routes
-router.get("/suggestions", getSearchSuggestions);
+router.route("/:id").get(getDealerById);     // THIS RUNS FIRST\
 
 
 export default router;

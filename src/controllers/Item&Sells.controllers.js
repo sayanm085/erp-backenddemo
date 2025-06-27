@@ -1,4 +1,6 @@
 import Item from '../model/Item.model.js'
+import PurchaseOrderByDealer from '../model/PurchaseOrderByDealer.js'
+import InventoryStock from '../model/InventoryStock.js'
 import {asyncHandler} from '../utils/asyncHandler.js'
 import {ApiResponse} from '../utils/ApiResponse.js'
 
@@ -60,11 +62,7 @@ export const addItem = asyncHandler(async (req, res) => {
 });
 
 
-/**
- * Controller to get all items in the inventory
- * @route GET /api/items
- * @access Private
- */
+
 export const getAllItems = asyncHandler(async (req, res) => {
     // Implement pagination
     const page = parseInt(req.query.page) || 1;
@@ -102,11 +100,7 @@ export const getAllItems = asyncHandler(async (req, res) => {
     );
 });
 
-/**
- * Controller to get a single item by ID
- * @route GET /api/items/:id
- * @access Private
- */
+
 export const getItemById = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -121,11 +115,7 @@ export const getItemById = asyncHandler(async (req, res) => {
     );
 });
 
-/**
- * Controller to update an item
- * @route PUT /api/items/:id
- * @access Private/Admin
- */
+
 export const updateItem = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -163,11 +153,7 @@ export const updateItem = asyncHandler(async (req, res) => {
     );
 });
 
-/**
- * Controller to delete an item
- * @route DELETE /api/items/:id
- * @access Private/Admin
- */
+
 export const deleteItem = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -181,6 +167,13 @@ export const deleteItem = asyncHandler(async (req, res) => {
         new ApiResponse(200, {}, "Item deleted successfully")
     );
 });
+
+
+
+
+
+
+
 
 
 

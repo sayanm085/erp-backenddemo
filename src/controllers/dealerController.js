@@ -4,6 +4,7 @@ import {ApiResponse} from '../utils/ApiResponse.js'
 
 // Get all dealers
 export const getAllDealers = async (req, res) => {
+   console.log("Suggestions endpoint called");
   try {
     const dealers = await Dealer.find({ isActive: true });
     res.status(200).json({
@@ -115,12 +116,10 @@ export const deleteDealer = async (req, res) => {
   }
 };
 
-export const getSearchSuggestions = (req, res) => {
-  console.log("Suggestions endpoint called");
-  
-  res.json({
+export const get = asyncHandler(async (req, res) => {
+ console.log("Suggestions endpoint called");
+  res.status(200).json({
     success: true,
-    data: ["Test suggestion"],
-    message: "Route is working correctly"
+    message: 'Search suggestions endpoint is working'
   });
-};
+} );

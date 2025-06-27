@@ -1,8 +1,3 @@
-/**
- * Current Date and Time (UTC): 2025-06-26 19:04:49
- * Current User's Login: sayanm085
- */
-
 import mongoose from 'mongoose';
 import mongoosePaginate from 'mongoose-paginate-v2';
 const { Schema } = mongoose;
