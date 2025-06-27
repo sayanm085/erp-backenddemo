@@ -19,11 +19,14 @@ export const getSearchSuggestions = asyncHandler(async (req, res) => {
     }
     
     try {
-        // Skip text search and just use regex search which doesn't require text index
+        // Search by name OR barcode using a $or query
         const items = await Item.find({ 
-            name: { $regex: query, $options: 'i' } 
+            $or: [
+                { name: { $regex: query, $options: 'i' } },
+                { barcode: { $regex: `^${escapeRegExp(query)}`, $options: 'i' } } // Starts with the query for barcode
+            ]
         })
-        .select('name barcode weight gstPercentage imageUrl')
+        .select('name barcode weight gstPercentage imageUrl currentQuantity costPrice salePrice')
         .limit(limit);
         
         const suggestions = processResults(items, query);
@@ -42,29 +45,41 @@ export const getSearchSuggestions = asyncHandler(async (req, res) => {
     }
 });
 
-
 function processResults(items, query) {
     return items.map(item => {
         // Handle both mongoose documents and plain objects
         const itemObj = item.toObject ? item.toObject() : item;
         
-        // Create a version with highlighted text using regex
-        // This is similar to how Amazon highlights matching portions
-        const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
-        const highlightedName = itemObj.name.replace(regex, '<strong>$1</strong>');
+        // Create a version with highlighted text
+        const nameRegex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+        const barcodeRegex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+        
+        // Check if the match is in the name or barcode
+        const isNameMatch = nameRegex.test(itemObj.name);
+        const isBarcodeMatch = barcodeRegex.test(itemObj.barcode);
+        
+        // Highlight the matching part in the name or show plain name
+        const highlightedName = isNameMatch 
+            ? itemObj.name.replace(nameRegex, '<strong>$1</strong>') 
+            : itemObj.name;
+            
+        // Highlight the matching part in barcode
+        const highlightedBarcode = isBarcodeMatch
+            ? itemObj.barcode.replace(barcodeRegex, '<strong>$1</strong>')
+            : itemObj.barcode;
         
         return {
             ...itemObj,
-            highlightedName
+            highlightedName,
+            highlightedBarcode,
+            matchType: isNameMatch ? 'name' : (isBarcodeMatch ? 'barcode' : 'other')
         };
     });
 }
 
-
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 
 
 // Get search suggestions for dealers// This endpoint returns dealer names and contact info that match the search query

@@ -10,6 +10,12 @@ const inventoryStockSchema = new mongoose.Schema(
       required: [true, "Item reference is required"],
       index: true
     },
+    barcode: {
+      type: String,
+      required: [true, "Barcode is required"],
+      unique: true,
+      trim: true
+    },
     // Total current quantity across all batches
     currentQuantity: {
       type: Number,

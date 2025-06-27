@@ -1,12 +1,7 @@
-/**
- * Current Date and Time (UTC): 2025-06-27 07:22:15
- * Current User's Login: sayanm085
- */
-
 import mongoose from "mongoose";
 import mongoosePaginate from "mongoose-paginate-v2";
 
-// Collection to track inventory batches at different price points
+// Collection to track inventory purchase history
 const inventoryBatchSchema = new mongoose.Schema(
   {
     item: {
@@ -14,6 +9,17 @@ const inventoryBatchSchema = new mongoose.Schema(
       ref: "Item",
       required: [true, "Item reference is required"],
       index: true
+    },
+    inventoryStock: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InventoryStock",
+      required: [true, "Inventory stock reference is required"]
+    },
+    // The barcode used for this batch
+    barcode: {
+      type: String,
+      required: [true, "Barcode is required"],
+      trim: true
     },
     // Remaining quantity in this batch
     remainingQuantity: {
@@ -32,7 +38,7 @@ const inventoryBatchSchema = new mongoose.Schema(
       type: Number,
       required: [true, "Cost price is required"]
     },
-    // Sale price when this batch was added
+    // Sale price at the time of this batch
     salePrice: {
       type: Number,
       required: [true, "Sale price is required"]
@@ -48,6 +54,13 @@ const inventoryBatchSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    // Batch/lot number
+    batchNumber: {
+      type: String,
+      required: [true, "Batch number is required"],
+      unique: true,
+      trim: true
+    },
     // Is this batch active (has remaining stock)
     isActive: {
       type: Boolean,
@@ -56,11 +69,6 @@ const inventoryBatchSchema = new mongoose.Schema(
     // Expiry date if applicable
     expiryDate: {
       type: Date
-    },
-    // Batch/lot number
-    batchNumber: {
-      type: String,
-      trim: true
     },
     createdBy: {
       type: String,
@@ -75,6 +83,7 @@ const inventoryBatchSchema = new mongoose.Schema(
 // Create compound index for common queries
 inventoryBatchSchema.index({ item: 1, isActive: 1 });
 inventoryBatchSchema.index({ item: 1, purchaseDate: -1 });
+inventoryBatchSchema.index({ batchNumber: 1 }, { unique: true });
 
 // Add pagination plugin
 inventoryBatchSchema.plugin(mongoosePaginate);

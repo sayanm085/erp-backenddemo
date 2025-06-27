@@ -23,11 +23,13 @@ app.get('/', (req, res) => {
 import itemRoutes from './routes/Items.routes.js';
 import searchRoutes from "./routes/search.routes.js";
 import dealerRoutes from './routes/dealerRoutes.js';
+import sales from './routes/Sales&Purchase.routes.js';
 
 // Using routes
 app.use('/api/items', itemRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/dealers', dealerRoutes);
+app.use('/api/sales', sales);
 
 
 
