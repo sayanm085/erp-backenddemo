@@ -1,9 +1,7 @@
-//  * Creates an API error object.
-//  * @param {number} statusCode - The HTTP status code.
-//  * @param {string} [message="Something went wrong"] - The error message.
-//  * @param {Array} [errors=[]] - Additional error details.
-//  * @param {string} [stack=""] - The stack trace.
-//  * @returns {Error} The created error object.
+/**
+ * Current Date and Time (UTC): 2025-06-28 11:49:32
+ * Current User's Login: sayanm085
+ */
 
 function ApiError(statusCode, message = "Something went wrong", errors = [], stack = "") {
     const error = new Error(message);
@@ -16,7 +14,7 @@ function ApiError(statusCode, message = "Something went wrong", errors = [], sta
     if (stack) {
         error.stack = stack;
     } else {
-        Error.captureStackTrace(error, createApiError);
+        Error.captureStackTrace(error, ApiError); // Changed from createApiError to ApiError
     }
 
     return error;

@@ -2,7 +2,9 @@ import Item from '../model/Item.model.js';
 import PurchaseOrderByDealer from '../model/PurchaseOrderByDealer.js';
 import InventoryStock from '../model/InventoryStock.js';
 import InventoryBatch from '../model/InventoryBatch.js';
+import ItemSale from '../model/ItemSale.js';
 import Dealer from '../model/Dealer.js';
+import CustomerDetails from '../model/CustomerDetails.js';
 import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -174,7 +176,7 @@ export const deleteItem = asyncHandler(async (req, res) => {
 
 
 
-
+// Controller for purchasing products by dealer
 export const purchaseProductByDealer = asyncHandler(async (req, res) => {
     // Start a MongoDB session for transaction
     const session = await mongoose.startSession();
@@ -463,7 +465,7 @@ export const purchaseProductByDealer = asyncHandler(async (req, res) => {
     }
 });
 
-
+// This controller retrieves all purchase orders for a specific dealer
 export const getPurchaseOrderById = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -488,7 +490,7 @@ export const getPurchaseOrderById = asyncHandler(async (req, res) => {
     );
 });
 
-
+// Controller to get all purchase orders by dealer
 export const getItemInventory = asyncHandler(async (req, res) => {
     const { itemId } = req.params;
     
@@ -538,6 +540,327 @@ export const getItemInventory = asyncHandler(async (req, res) => {
 
 
 
+
+// item sells controller
+
+export const createOrder = asyncHandler(async (req, res) => {
+  const { items, counterNumber, customerDetails } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    throw new ApiError(400, "Items array is required and cannot be empty");
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Handle customer - use existing or create new if not found
+    let customerId = null;
+    if (customerDetails) {
+      if (customerDetails.id) {
+        // Use existing by id
+        const existingCustomer = await CustomerDetails.findById(customerDetails.id).session(session);
+        if (!existingCustomer) {
+          throw new ApiError(404, "Customer not found with the provided ID");
+        }
+        customerId = customerDetails.id;
+      } else if (customerDetails.phone) {
+        // Use existing by phone, or create new
+        let existingCustomer = await CustomerDetails.findOne({ phone: customerDetails.phone }).session(session);
+        if (existingCustomer) {
+          customerId = existingCustomer._id;
+          if (customerDetails.name && !existingCustomer.name) {
+            existingCustomer.name = customerDetails.name;
+          }
+          if (customerDetails.email && !existingCustomer.email) {
+            existingCustomer.email = customerDetails.email;
+          }
+          existingCustomer.totalVisits += 1;
+          existingCustomer.lastVisitDate = new Date();
+          await existingCustomer.save({ session });
+        } else {
+          const newCustomer = await CustomerDetails.create([{
+            name: customerDetails.name || "Guest",
+            phone: customerDetails.phone,
+            email: customerDetails.email || null,
+            address: customerDetails.address || {},
+            registrationDate: new Date(),
+            totalVisits: 1,
+            lastVisitDate: new Date()
+          }], { session });
+          customerId = newCustomer[0]._id;
+        }
+      }
+    }
+
+    // Prepare order totals and items
+    let subtotal = 0;
+    let totalTax = 0;
+    let totalDiscount = 0;
+    const processedItems = [];
+
+    // Validate and prepare all items first, collect matched stock records for later atomic update
+    const stockUpdates = [];
+    for (const cartItem of items) {
+      // Find item by itemId or barcode
+      let item;
+      if (cartItem.itemId) {
+        item = await Item.findById(cartItem.itemId).session(session);
+      } else if (cartItem.barcode) {
+        item = await Item.findOne({ barcode: cartItem.barcode }).session(session);
+        // If not found, look in inventory stock
+        if (!item) {
+          const inventoryItem = await InventoryStock.findOne({ barcode: cartItem.barcode })
+            .populate('item')
+            .session(session);
+          if (inventoryItem) item = inventoryItem.item;
+        }
+      }
+      if (!item) throw new ApiError(404, `Item not found: ${cartItem.itemId || cartItem.barcode}`);
+
+      // Find the InventoryStock record for the EXACT barcode in the cart
+      const stock = await InventoryStock.findOne({ barcode: cartItem.barcode }).session(session);
+      if (!stock) {
+        throw new ApiError(400, `Inventory stock not found for barcode: ${cartItem.barcode}`);
+      }
+      if (stock.currentQuantity < cartItem.quantity) {
+        throw new ApiError(400, `Insufficient stock for ${item.name} (barcode: ${cartItem.barcode}). Available: ${stock.currentQuantity}`);
+      }
+
+      // Calculate item price/tax/discount
+      const price = item.salePrice || stock.currentSalePrice || 0;
+      const gstPercentage = item.gstPercentage || 0;
+      const taxAmount = (price * cartItem.quantity * gstPercentage) / 100;
+      const discountPercent = cartItem.applyDiscount ? (item.discountPercent || 0) : 0;
+      const discountAmount = (price * cartItem.quantity * discountPercent) / 100;
+      const totalItemPrice = (price * cartItem.quantity) - discountAmount;
+
+      subtotal += price * cartItem.quantity;
+      totalTax += taxAmount;
+      totalDiscount += discountAmount;
+
+      processedItems.push({
+        itemId: item._id,
+        name: item.name,
+        barcode: cartItem.barcode, // always use the sold barcode, not the main item barcode
+        quantity: cartItem.quantity,
+        price: price,
+        gstPercentage: gstPercentage,
+        taxAmount: taxAmount,
+        discountPercent: discountPercent,
+        discountAmount: discountAmount,
+        totalPrice: totalItemPrice
+      });
+
+      stockUpdates.push({ stock, quantity: cartItem.quantity });
+    }
+
+    // Calculate order total
+    const total = subtotal + totalTax - totalDiscount;
+
+    // Create new sale order
+    const newSale = await ItemSale.create([{
+      date: new Date(),
+      items: processedItems,
+      subtotal: subtotal,
+      taxAmount: totalTax,
+      discountAmount: totalDiscount,
+      total: total,
+      status: "in_progress",
+      counterNumber: counterNumber || 1,
+      createdBy: req.user?._id || null,
+      customerId: customerId
+    }], { session });
+
+    // Now decrement stock for each sold barcode
+    for (const { stock, quantity } of stockUpdates) {
+      stock.currentQuantity -= quantity;
+      await stock.save({ session });
+    }
+
+    await session.commitTransaction();
+
+    return res.status(201).json(
+      new ApiResponse(201, newSale[0], "Sale order created successfully")
+    );
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+});
+
+/**
+ * @description Complete a sale with payment and update inventory
+ * @route POST /api/sales/:saleId/complete-transaction
+ * @access Private
+ */
+export const completeTransaction = asyncHandler(async (req, res) => {
+  const { saleId } = req.params;
+  const { 
+    paymentMethod, 
+    amountReceived,
+    cardDetails,
+    upiTransactionId,
+    loyaltyPointsUsed = 0,
+    additionalDiscount = 0
+  } = req.body;
+  
+  console.log("Complete transaction request:", {
+    saleId,
+    paymentMethod,
+    amountReceived,
+    cardDetails,
+
+    upiTransactionId,
+    loyaltyPointsUsed,
+    additionalDiscount
+  });
+  // Validate payment method
+  const validPaymentMethods = ['cash', 'card', 'upi'];
+  if (!validPaymentMethods.includes(paymentMethod)) {
+    throw new ApiError(400, "Invalid payment method. Must be cash, card, or upi");
+  }
+  if (paymentMethod === 'cash' && (!amountReceived || amountReceived <= 0)) {
+    throw new ApiError(400, "Amount received is required for cash payments");
+  }
+  if (paymentMethod === 'card' && !cardDetails) {
+    throw new ApiError(400, "Card details are required for card payments");
+  }
+  if (paymentMethod === 'upi' && !upiTransactionId) {
+    throw new ApiError(400, "UPI transaction ID is required for UPI payments");
+  }
+  
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const sale = await ItemSale.findById(saleId).session(session);
+    if (!sale) throw new ApiError(404, "Sale not found");
+    if (sale.status !== 'in_progress') throw new ApiError(400, `This sale is already ${sale.status}`);
+    
+    // Apply discount
+    if (additionalDiscount > 0) {
+      sale.additionalDiscount = additionalDiscount;
+      sale.total = sale.total - additionalDiscount;
+      if (sale.total < 0) sale.total = 0;
+    }
+    
+    // Handle loyalty points
+    if (loyaltyPointsUsed > 0 && sale.customerId) {
+      const customer = await CustomerDetails.findById(sale.customerId).session(session);
+      if (!customer) throw new ApiError(404, "Customer not found");
+      if (customer.loyaltyPoints < loyaltyPointsUsed) {
+        throw new ApiError(400, `Customer only has ${customer.loyaltyPoints} loyalty points available`);
+      }
+      const pointsDiscount = loyaltyPointsUsed * 0.25;
+      sale.pointsDiscount = pointsDiscount;
+      sale.loyaltyPointsUsed = loyaltyPointsUsed;
+      sale.total = sale.total - pointsDiscount;
+      if (sale.total < 0) sale.total = 0;
+      customer.loyaltyPoints -= loyaltyPointsUsed;
+      await customer.save({ session });
+    }
+    
+    // Calculate change for cash payments
+    let change = 0;
+    if (paymentMethod === 'cash') {
+      change = parseFloat(amountReceived) - sale.total;
+      if (change < 0) throw new ApiError(400, "Insufficient amount received");
+    }
+    
+    // Inventory update: always try barcode first, then item, then itemId
+    for (const item of sale.items) {
+      let updateResult = null;
+      if (item.barcode) {
+        updateResult = await InventoryStock.findOneAndUpdate(
+          { barcode: item.barcode },
+          { $inc: { currentQuantity: -item.quantity } },
+          { session }
+        );
+      }
+      if (!updateResult) {
+        updateResult = await InventoryStock.findOneAndUpdate(
+          { item: item.itemId },
+          { $inc: { currentQuantity: -item.quantity } },
+          { session }
+        );
+      }
+      if (!updateResult) {
+        updateResult = await InventoryStock.findOneAndUpdate(
+          { itemId: item.itemId },
+          { $inc: { currentQuantity: -item.quantity } },
+          { session }
+        );
+      }
+      if (!updateResult) {
+        throw new ApiError(500, `Failed to update inventory for item: ${item.name} (barcode: ${item.barcode || ''})`);
+      }
+    }
+    
+    // Payment details
+    sale.paymentMethod = paymentMethod;
+    sale.paymentDetails = {
+      amountReceived: paymentMethod === 'cash' ? parseFloat(amountReceived) : sale.total,
+      change: paymentMethod === 'cash' ? change : 0,
+      cardDetails: paymentMethod === 'card' ? cardDetails : null,
+      upiTransactionId: paymentMethod === 'upi' ? upiTransactionId : null
+    };
+    sale.status = 'completed';
+    sale.completedAt = new Date();
+    
+    // Generate invoice number
+    const today = new Date();
+    const year = today.getFullYear().toString().slice(-2);
+    const month = (today.getMonth() + 1).toString().padStart(2, '0');
+    const day = today.getDate().toString().padStart(2, '0');
+    const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    sale.invoiceNumber = `INV-${year}${month}${day}-${randomNum}`;
+    
+    await sale.save({ session });
+    
+    // Loyalty points earn
+    if (sale.customerId) {
+      const pointsEarned = Math.floor(sale.total / 100); // 1 point for every 100 spent
+      await CustomerDetails.findByIdAndUpdate(
+        sale.customerId,
+        {
+          $inc: { totalSpent: sale.total, loyaltyPoints: pointsEarned },
+          lastVisitDate: new Date()
+        },
+        { session }
+      );
+      sale._doc.pointsEarned = pointsEarned;
+    }
+    
+    await session.commitTransaction();
+    return res.status(200).json(
+      new ApiResponse(200, sale, "Transaction completed successfully")
+    );
+  } catch (error) {
+    await session.abortTransaction();
+
+    // This ensures backend always sends a message or error property
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode || 500).json({
+        statusCode: error.statusCode,
+        error: error.message,
+        success: false,
+        message: error.message,
+      });
+    } else {
+      return res.status(500).json({
+        statusCode: 500,
+        error: error.message || "Internal Server Error",
+        success: false,
+        message: error.message || "Internal Server Error",
+      });
+    }
+  } finally {
+    session.endSession();
+  }
+});
 
 
 
