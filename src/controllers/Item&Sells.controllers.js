@@ -910,6 +910,67 @@ export const completeTransaction = asyncHandler(async (req, res) => {
 
 
 
+// Controller to get all sales orders with pagination and optional search
+export const getAllSalesOrders = asyncHandler(async (req, res) => {
+  // Implement pagination
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Optional search filter
+  let searchQuery = {};
+  if (req.query.search) {
+    searchQuery = {
+      $or: [
+        { 'items.name': { $regex: req.query.search, $options: 'i' } },
+        { invoiceNumber: { $regex: req.query.search, $options: 'i' } }
+      ]
+    };
+  }
+
+  // Optional filter by status
+  if (req.query.status) {
+    searchQuery.status = req.query.status;
+  }
+
+  // Optional filter by customerId
+  if (req.query.customerId) {
+    searchQuery.customerId = req.query.customerId;
+  }
+
+  // Get sales orders with pagination
+  const salesOrders = await ItemSale.find(searchQuery)
+    .populate('customerId', 'name phone email')
+    // .populate('createdBy', 'username') // Removed to avoid "User" model error
+    .sort({ date: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  // Get total count for pagination info
+  const totalOrders = await ItemSale.countDocuments(searchQuery);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200, 
+      {
+        orders: salesOrders,
+        pagination: {
+          total: totalOrders,
+          page,
+          limit,
+          pages: Math.ceil(totalOrders / limit)
+        }
+      },
+      "Sales orders fetched successfully"
+    )
+  );
+});
+
+
+
+
+
+
 
 
 

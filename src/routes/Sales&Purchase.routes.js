@@ -5,7 +5,8 @@ import {
     getAllItemInventory ,
     createOrder,
     completeTransaction,
-    getAllPurchaseOrders
+    getAllPurchaseOrders,
+    getAllSalesOrders
 } from "../controllers/Item&Sells.controllers.js";
 
 const router = Router();
@@ -18,6 +19,8 @@ router.route("/purchase/:id").get(getPurchaseOrderById);
 router.route("/getAllItemInventory").get(getAllItemInventory);
 // Route to get all purchase orders
 router.route("/purchase-orders").get(getAllPurchaseOrders);
+// Route to get all sales orders
+router.route("/sales-orders").get(getAllSalesOrders);
 
 // Route to create a new order
 // Sales routes - updated to match our controller implementation
