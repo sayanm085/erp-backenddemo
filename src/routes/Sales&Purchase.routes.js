@@ -2,9 +2,10 @@ import { Router } from "express";
 import {
     purchaseProductByDealer,
     getPurchaseOrderById,
-    getItemInventory ,
+    getAllItemInventory ,
     createOrder,
-    completeTransaction
+    completeTransaction,
+    getAllPurchaseOrders
 } from "../controllers/Item&Sells.controllers.js";
 
 const router = Router();
@@ -14,7 +15,9 @@ router.route("/purchaseproduct").post(purchaseProductByDealer);
 // Route to get purchase order details by ID
 router.route("/purchase/:id").get(getPurchaseOrderById);
 // Route to get item inventory
-router.route("/inventory").get(getItemInventory);
+router.route("/getAllItemInventory").get(getAllItemInventory);
+// Route to get all purchase orders
+router.route("/purchase-orders").get(getAllPurchaseOrders);
 
 // Route to create a new order
 // Sales routes - updated to match our controller implementation

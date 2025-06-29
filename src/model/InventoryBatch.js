@@ -61,6 +61,12 @@ const inventoryBatchSchema = new mongoose.Schema(
       unique: true,
       trim: true
     },
+    // Dealer reference if applicable
+    dealer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Dealer",
+      required: false // Optional, can be null if not applicable
+    },
     // Is this batch active (has remaining stock)
     isActive: {
       type: Boolean,

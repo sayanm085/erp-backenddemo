@@ -386,6 +386,7 @@ export const purchaseProductByDealer = asyncHandler(async (req, res) => {
                 item: item._id,
                 inventoryStock: inventoryStock._id, // Reference to the inventory stock
                 barcode: finalBarcode, // The barcode used
+                dealer: dealer._id,
                 remainingQuantity: quantity,
                 originalQuantity: quantity,
                 costPrice: unitPrice,
@@ -401,6 +402,15 @@ export const purchaseProductByDealer = asyncHandler(async (req, res) => {
             await newBatch.save({ session });
             console.log(`Created batch record ${batchNumber} for tracking purchase history`);
         }
+         console.log({
+            dealer: dealer._id,
+            purchaseOrders: {
+                poNumber,
+                orderDate: new Date(),
+                totalAmount: subtotal + taxAmount,
+                status: 'delivered'
+            }
+         })
 
         // Step 7: Create the purchase order
         const totalAmount = subtotal + taxAmount;
@@ -427,6 +437,9 @@ export const purchaseProductByDealer = asyncHandler(async (req, res) => {
         
         // Commit transaction
         await session.commitTransaction();
+
+        console.log(`Purchase order ${poNumber} created successfully for dealer ${dealer.name}`);
+       
         
         // Return success response
         return res.status(201).json(
@@ -468,74 +481,103 @@ export const purchaseProductByDealer = asyncHandler(async (req, res) => {
 // This controller retrieves all purchase orders for a specific dealer
 export const getPurchaseOrderById = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-        throw new ApiError(400, "Invalid purchase order ID");
-    }
-    
+
+    // Find the purchase order by ID
     const purchaseOrder = await PurchaseOrderByDealer.findById(id)
-        .populate('dealer', 'name contactPerson phone')
-        .populate('items.item', 'name barcode');
-    
+        .populate('dealer', 'name contactDetails')
+        .populate('items.item', 'name barcode weight gstPercentage')
+        .populate('createdBy', 'username');
     if (!purchaseOrder) {
         throw new ApiError(404, "Purchase order not found");
     }
-    
+    return res.status(200).json(
+        new ApiResponse(200, purchaseOrder, "Purchase order fetched successfully")
+    );
+}
+);
+
+
+// allPurchaseOrderByDealer purchase orders controller
+export const getAllPurchaseOrders = asyncHandler(async (req, res) => {
+
+    // Implement pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Optional search filter
+    const searchQuery = req.query.search 
+        ? { poNumber: { $regex: req.query.search, $options: 'i' } }
+        : {};
+
+    // Get purchase orders with pagination
+    const purchaseOrders = await PurchaseOrderByDealer.find(searchQuery)
+        .populate('dealer', 'name contactDetails')
+        .populate('createdBy', 'username')
+        .sort({ orderDate: -1 })
+        .skip(skip)
+        .limit(limit);
+
+    // Get total count for pagination info
+    const totalOrders = await PurchaseOrderByDealer.countDocuments(searchQuery);
+
     return res.status(200).json(
         new ApiResponse(
-            200,
-            { purchaseOrder },
-            "Purchase order retrieved successfully"
+            200, 
+            {
+                orders: purchaseOrders,
+                pagination: {
+                    total: totalOrders,
+                    page,
+                    limit,
+                    pages: Math.ceil(totalOrders / limit)
+                }
+            },
+            "Purchase orders fetched successfully"
         )
     );
+   
 });
 
-// Controller to get all purchase orders by dealer
-export const getItemInventory = asyncHandler(async (req, res) => {
-    const { itemId } = req.params;
-    
-    if (!mongoose.Types.ObjectId.isValid(itemId)) {
-        throw new ApiError(400, "Invalid item ID");
-    }
-    
-    // Get current inventory state
-    const inventory = await InventoryStock.findOne({ item: itemId })
-        .populate('item', 'name barcode gstPercentage');
-    
-    if (!inventory) {
-        throw new ApiError(404, "Inventory record not found for this item");
-    }
-    
-    // Get active batches
-    const batches = await InventoryBatch.find({
-        item: itemId,
-        isActive: true,
-        remainingQuantity: { $gt: 0 }
-    }).sort({ purchaseDate: 1 });
-    
+
+// Controller to get all inventory items with pagination and optional search
+export const getAllItemInventory = asyncHandler(async (req, res) => {
+    // Implement pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Optional search filter
+    const searchQuery = req.query.search 
+        ? { name: { $regex: req.query.search, $options: 'i' } }
+        : {};
+
+    // Get items with pagination
+    const inventoryItems = await InventoryStock.find(searchQuery)
+        .populate('item', 'name barcode weight gstPercentage')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+    // Get total count for pagination info
+    const totalItems = await InventoryStock.countDocuments(searchQuery);
+
     return res.status(200).json(
         new ApiResponse(
-            200,
+            200, 
             {
-                inventory: {
-                    item: inventory.item,
-                    currentQuantity: inventory.currentQuantity,
-                    averageCostPrice: inventory.averageCostPrice,
-                    currentCostPrice: inventory.currentCostPrice,
-                    currentSalePrice: inventory.currentSalePrice,
-                    status: inventory.status
-                },
-                batches: batches.map(batch => ({
-                    batchNumber: batch.batchNumber,
-                    remainingQuantity: batch.remainingQuantity,
-                    costPrice: batch.costPrice,
-                    purchaseDate: batch.purchaseDate,
-                    expiryDate: batch.expiryDate
-                }))
+                items: inventoryItems,
+                pagination: {
+                    total: totalItems,
+                    page,
+                    limit,
+                    pages: Math.ceil(totalItems / limit)
+                }
             },
-            "Item inventory retrieved successfully"
+            "Inventory items fetched successfully"
         )
     );
+    
 });
 
 
