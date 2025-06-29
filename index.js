@@ -4,8 +4,8 @@ import databaseconnection from "./src/db/database.js";
 
 databaseconnection()
 .then(() => {
-    app.listen(3600, () => {
-        console.log(`Server is running on http://localhost:3600 `);
+    app.listen(8080, () => {
+        console.log(`Server is running on http://localhost:8080 `);
     });
 })
 .catch((error) => {

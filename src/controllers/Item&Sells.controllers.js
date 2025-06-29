@@ -513,6 +513,7 @@ export const getAllPurchaseOrders = asyncHandler(async (req, res) => {
     // Get purchase orders with pagination
     const purchaseOrders = await PurchaseOrderByDealer.find(searchQuery)
         .populate('dealer', 'name contactDetails')
+        .populate('items.item', 'name barcode weight gstPercentage')
         .populate('createdBy', 'username')
         .sort({ orderDate: -1 })
         .skip(skip)
