@@ -755,7 +755,6 @@ export const completeTransaction = asyncHandler(async (req, res) => {
     paymentMethod,
     amountReceived,
     cardDetails,
-
     upiTransactionId,
     loyaltyPointsUsed,
     additionalDiscount
@@ -816,29 +815,48 @@ export const completeTransaction = asyncHandler(async (req, res) => {
     // Inventory update: always try barcode first, then item, then itemId
     for (const item of sale.items) {
       let updateResult = null;
+      let inventoryDoc = null;
+
+      // Try by barcode
       if (item.barcode) {
-        updateResult = await InventoryStock.findOneAndUpdate(
-          { barcode: item.barcode },
-          { $inc: { currentQuantity: -item.quantity } },
-          { session }
-        );
+        inventoryDoc = await InventoryStock.findOne({ barcode: item.barcode }).session(session);
+        if (inventoryDoc) {
+          updateResult = await InventoryStock.findOneAndUpdate(
+            { _id: inventoryDoc._id },
+            { $inc: { currentQuantity: -item.quantity } },
+            { session, new: true }
+          );
+        }
       }
+      // Try by item
       if (!updateResult) {
-        updateResult = await InventoryStock.findOneAndUpdate(
-          { item: item.itemId },
-          { $inc: { currentQuantity: -item.quantity } },
-          { session }
-        );
+        inventoryDoc = await InventoryStock.findOne({ item: item.itemId }).session(session);
+        if (inventoryDoc) {
+          updateResult = await InventoryStock.findOneAndUpdate(
+            { _id: inventoryDoc._id },
+            { $inc: { currentQuantity: -item.quantity } },
+            { session, new: true }
+          );
+        }
       }
+      // Try by itemId
       if (!updateResult) {
-        updateResult = await InventoryStock.findOneAndUpdate(
-          { itemId: item.itemId },
-          { $inc: { currentQuantity: -item.quantity } },
-          { session }
-        );
+        inventoryDoc = await InventoryStock.findOne({ itemId: item.itemId }).session(session);
+        if (inventoryDoc) {
+          updateResult = await InventoryStock.findOneAndUpdate(
+            { _id: inventoryDoc._id },
+            { $inc: { currentQuantity: -item.quantity } },
+            { session, new: true }
+          );
+        }
       }
       if (!updateResult) {
         throw new ApiError(500, `Failed to update inventory for item: ${item.name} (barcode: ${item.barcode || ''})`);
+      }
+
+      // --- NEW LOGIC: Remove inventory item if stock is now 0 ---
+      if (updateResult.currentQuantity <= 0) {
+        await InventoryStock.deleteOne({ _id: updateResult._id }, { session });
       }
     }
     
@@ -904,7 +922,6 @@ export const completeTransaction = asyncHandler(async (req, res) => {
     session.endSession();
   }
 });
-
 
 
 
