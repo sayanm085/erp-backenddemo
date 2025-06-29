@@ -543,31 +543,89 @@ export const getAllPurchaseOrders = asyncHandler(async (req, res) => {
 
 // Controller to get all inventory items with pagination and optional search
 export const getAllItemInventory = asyncHandler(async (req, res) => {
-    // Implement pagination
+    // Pagination
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Optional search filter
-    const searchQuery = req.query.search 
-        ? { name: { $regex: req.query.search, $options: 'i' } }
+    // Search value
+    const search = req.query.search ? req.query.search.trim() : "";
+
+    // Build search query
+    let searchQuery = {};
+    if (search) {
+        searchQuery = {
+            $or: [
+                // Search the barcode in InventoryStock
+                { barcode: { $regex: search, $options: "i" } },
+                // Search the name or barcode in the populated item
+                // This works if you use aggregation, see below!
+            ]
+        };
+    }
+
+    // Use aggregate to search in both top-level and populated fields
+    const matchStage = search
+        ? {
+            $or: [
+                { barcode: { $regex: search, $options: "i" } },           // top-level barcode
+                { "itemData.name": { $regex: search, $options: "i" } },   // populated item name
+                { "itemData.barcode": { $regex: search, $options: "i" } } // populated item barcode
+            ]
+        }
         : {};
 
-    // Get items with pagination
-    const inventoryItems = await InventoryStock.find(searchQuery)
-        .populate('item', 'name barcode weight gstPercentage')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
+    // AGGREGATION for full suggestion-type search
+    const pipeline = [
+        {
+            $lookup: {
+                from: "items", // collection name (not model name!)
+                localField: "item",
+                foreignField: "_id",
+                as: "itemData"
+            }
+        },
+        { $unwind: "$itemData" },
+        ...(search ? [{ $match: matchStage }] : []),
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit }
+    ];
 
-    // Get total count for pagination info
-    const totalItems = await InventoryStock.countDocuments(searchQuery);
+    // Count pipeline for pagination
+    const countPipeline = [
+        {
+            $lookup: {
+                from: "items",
+                localField: "item",
+                foreignField: "_id",
+                as: "itemData"
+            }
+        },
+        { $unwind: "$itemData" },
+        ...(search ? [{ $match: matchStage }] : []),
+        { $count: "total" }
+    ];
+
+    // Fetch inventory items
+    const inventoryItems = await InventoryStock.aggregate(pipeline);
+
+    // Fetch total count
+    const countRes = await InventoryStock.aggregate(countPipeline);
+    const totalItems = countRes[0]?.total || 0;
+
+    // Optionally, you can "normalize" itemData to item for compatibility with existing code:
+    const items = inventoryItems.map(doc => ({
+        ...doc,
+        item: doc.itemData,
+        itemData: undefined
+    }));
 
     return res.status(200).json(
         new ApiResponse(
-            200, 
+            200,
             {
-                items: inventoryItems,
+                items,
                 pagination: {
                     total: totalItems,
                     page,
@@ -578,9 +636,7 @@ export const getAllItemInventory = asyncHandler(async (req, res) => {
             "Inventory items fetched successfully"
         )
     );
-    
 });
-
 
 
 
